@@ -2,7 +2,7 @@
 
 [![ci](https://github.com/rekanalar/goose-xml/actions/workflows/ci.yml/badge.svg)](https://github.com/rekanalar/goose-xml/actions/workflows/ci.yml)
 
-XML parsing and building for the Goose programming language. The rules
+XML parsing and building for the [Goose](https://github.com/aardappel/goose) programming language. The rules
 are the XML 1.0 well-formedness core.
 
 The package parses a document into a tree and gives a walk API over the
