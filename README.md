@@ -15,7 +15,7 @@ and validation are out. Pure Goose, no C.
 Add this to the root file of the program that uses it:
 
 ```goose
-import xml from "rekanalar/goose-xml@v0.1.0";
+import xml from "rekanalar/goose-xml@v0.1.1";
 ```
 
 ## API
