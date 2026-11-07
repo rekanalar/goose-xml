@@ -49,7 +49,8 @@ fn find_entity_end(s: const u8[:], pos: i64) -> i64 {
 }
 
 // valid_entities checks every entity in the span. The five predefined
-// names pass; anything else is a fault. Raw '<' in text is a fault too.
+// names and the numeric character references pass; anything else is a
+// fault. Raw '<' in text is a fault too.
 fn valid_entities(s: const u8[:]) -> bool {
     var i = 0;
     while i < s.len {
@@ -58,7 +59,10 @@ fn valid_entities(s: const u8[:]) -> bool {
             let end = find_entity_end(s, i);
             if end < 0 { return false; }
             let ent = s[i + 1..end];
-            if ent != "lt" && ent != "gt" && ent != "amp" && ent != "apos" && ent != "quot" {
+            if ent.len > 0 && ent[0] == '#' {
+                let cp, ok = char_ref(ent[1..]);
+                if !ok { return false; }
+            } else if ent != "lt" && ent != "gt" && ent != "amp" && ent != "apos" && ent != "quot" {
                 return false;
             }
             i = end + 1;
@@ -72,7 +76,7 @@ fn valid_entities(s: const u8[:]) -> bool {
 // append_node adds one node to the tree and gives its index.
 fn append_node(nodes: Node[>..]&, kind: i32, name: const u8[:], content: const u8[:], parent: i32) -> i32 {
     let id = nodes.len as i32;
-    nodes.push(Node { kind: kind, name: name, content: content, parent: parent, first_child: -1, next_sibling: -1, attr_start: 0, attr_count: 0 });
+    nodes.push(Node { kind: kind, name: name, uri: "", local: name, content: content, parent: parent, first_child: -1, next_sibling: -1, attr_start: 0, attr_count: 0 });
     if parent >= 0 {
         // Link the node as the last child of the parent.
         var p = nodes[parent];
@@ -210,45 +214,9 @@ fn parse(s: const u8[:], nodes: Node[>..]&, attrs: Attr[>..]&) -> Doc, bool {
                 }
                 // The attributes.
                 var attr_start: i32 = attrs.len as i32;
-                var j = name_end;
-                var self_closing = false;
-                while j < s.len {
-                    while j < s.len && is_space(s[j]) { j += 1; }
-                    if j >= s.len { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                    if s[j] == '>' { j += 1; break; }
-                    if s[j] == '/' {
-                        if j + 1 >= s.len || s[j + 1] != '>' { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                        self_closing = true;
-                        j += 2;
-                        break;
-                    }
-                    let an_end = read_name(s, j);
-                    if an_end < 0 { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                    let aname = s[j..an_end];
-                    var k = an_end;
-                    while k < s.len && is_space(s[k]) { k += 1; }
-                    if k >= s.len || s[k] != '=' { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                    k += 1;
-                    while k < s.len && is_space(s[k]) { k += 1; }
-                    if k >= s.len || (s[k] != '"' && s[k] != '\'') { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                    let quote = s[k];
-                    k += 1;
-                    var vend = k;
-                    while vend < s.len && s[vend] != quote {
-                        if s[vend] == '<' { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                        vend += 1;
-                    }
-                    if vend >= s.len { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                    if !valid_entities(s[k..vend]) { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                    // A duplicate attribute name is a fault.
-                    var d = 0;
-                    while d < attrs.len - attr_start {
-                        if attrs[attr_start + d].name == aname { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
-                        d += 1;
-                    }
-                    attrs.push(Attr { name: aname, value: s[k..vend] });
-                    j = vend + 1;
-                }
+                let after, self_closing, aok = scan_attrs(s, name_end, attrs);
+                if !aok { return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false; }
+                var j = after;
                 nodes[id].attr_start = attr_start;
                 nodes[id].attr_count = attrs.len as i32 - attr_start;
                 if self_closing {
@@ -286,5 +254,125 @@ fn parse(s: const u8[:], nodes: Node[>..]&, attrs: Attr[>..]&) -> Doc, bool {
     if root_id < 0 || stack.len > 0 || !root_done {
         return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false;
     }
+    if !resolve_names(nodes, attrs) {
+        return Doc { nodes: nodes[..], attrs: attrs[..], root: -1 }, false;
+    }
     return Doc { nodes: nodes[..], attrs: attrs[..], root: root_id }, true;
+}
+
+// scan_attrs reads the attributes of a tag. It gives the place after the
+// tag, the self-closing flag, and the fault flag. The attributes go
+// into the array of the caller with the raw names.
+fn scan_attrs(s: const u8[:], pos: i64, attrs: Attr[>..]&) -> i64, bool, bool {
+    var j = pos;
+    var first = attrs.len;
+    var self_closing = false;
+    while j < s.len {
+        while j < s.len && is_space(s[j]) { j += 1; }
+        if j >= s.len { return j, self_closing, false; }
+        if s[j] == '>' { j += 1; break; }
+        if s[j] == '/' {
+            if j + 1 >= s.len || s[j + 1] != '>' { return j, self_closing, false; }
+            self_closing = true;
+            j += 2;
+            break;
+        }
+        let an_end = read_name(s, j);
+        if an_end < 0 { return j, self_closing, false; }
+        let aname = s[j..an_end];
+        var k = an_end;
+        while k < s.len && is_space(s[k]) { k += 1; }
+        if k >= s.len || s[k] != '=' { return j, self_closing, false; }
+        k += 1;
+        while k < s.len && is_space(s[k]) { k += 1; }
+        if k >= s.len || (s[k] != '"' && s[k] != '\'') { return j, self_closing, false; }
+        let quote = s[k];
+        k += 1;
+        var vend = k;
+        while vend < s.len && s[vend] != quote {
+            if s[vend] == '<' { return j, self_closing, false; }
+            vend += 1;
+        }
+        if vend >= s.len { return j, self_closing, false; }
+        if !valid_entities(s[k..vend]) { return j, self_closing, false; }
+        // A duplicate attribute name is a fault.
+        var d = 0;
+        while d < attrs.len - first {
+            if attrs[first + d].name == aname { return j, self_closing, false; }
+            d += 1;
+        }
+        attrs.push(Attr { name: aname, value: s[k..vend], uri: "", local: aname });
+        j = vend + 1;
+    }
+    return j, self_closing, true;
+}
+
+// scope_lookup gives the namespace that a prefix names in the scope of
+// the node. It walks the node and its ancestors. The default namespace
+// has the empty prefix. The prefix "xml" always names the namespace of
+// XML. A prefix without a declaration gives false.
+fn scope_lookup(nodes: Node[>..]&, attrs: Attr[>..]&, node_id: i32, prefix: const u8[:]) -> const u8[:], bool {
+    if prefix == "xml" { return XML_NS, true; }
+    var cur = node_id;
+    while cur >= 0 {
+        let n = nodes[cur];
+        var i = 0;
+        while i < n.attr_count {
+            let a = attrs[n.attr_start + i];
+            if prefix.len == 0 {
+                if a.name == "xmlns" { return a.value, true; }
+            } else if a.name.len == prefix.len + 6 && a.name[0..6] == "xmlns:" && a.name[6..] == prefix {
+                return a.value, true;
+            }
+            i += 1;
+        }
+        cur = n.parent;
+    }
+    return "", false;
+}
+
+// resolve_names gives every element and attribute its namespace and its
+// local name. A prefix without a declaration is a fault.
+fn resolve_names(nodes: Node[>..]&, attrs: Attr[>..]&) -> bool {
+    var i: i32 = 0;
+    while i < nodes.len as i32 {
+        let n = nodes[i];
+        if n.kind == KIND_ELEMENT {
+            let colon = find_colon(n.name);
+            if colon < 0 {
+                nodes[i].local = n.name;
+                let uri, found = scope_lookup(nodes, attrs, i, "");
+                if !found { nodes[i].uri = ""; } else { nodes[i].uri = uri; }
+            } else {
+                let prefix = n.name[0..colon];
+                let uri, found = scope_lookup(nodes, attrs, i, prefix);
+                if !found { return false; }
+                nodes[i].uri = uri;
+                nodes[i].local = n.name[colon + 1..];
+            }
+            var a = 0;
+            while a < n.attr_count {
+                let id = n.attr_start + a;
+                let aname = attrs[id].name;
+                let colon = find_colon(aname);
+                if colon < 0 {
+                    // An attribute without a prefix has no namespace.
+                    attrs[id].local = aname;
+                    attrs[id].uri = "";
+                } else if aname.len >= 6 && aname[0..6] == "xmlns:" {
+                    attrs[id].uri = XMLNS_NS;
+                    attrs[id].local = aname[6..];
+                } else {
+                    let prefix = aname[0..colon];
+                    let uri, found = scope_lookup(nodes, attrs, i, prefix);
+                    if !found { return false; }
+                    attrs[id].uri = uri;
+                    attrs[id].local = aname[colon + 1..];
+                }
+                a += 1;
+            }
+        }
+        i += 1;
+    }
+    return true;
 }
