@@ -384,10 +384,9 @@ fn parse(s: const u8[:], nodes: Node[>..]&, attrs: Attr[>..]&) -> Doc, bool {
                     // A comment. The first "--" must close it.
                     let j = find_lit(s, pos + 4, "--");
                     if j < 0 || j + 2 >= s.len || s[j + 2] != '>' { return fail, false; }
-                    // Outside the root the tree drops the comment.
-                    if parent >= 0 {
-                        append_node(nodes, KIND_COMMENT, s[0..0], s[pos + 4..j], parent);
-                    }
+                    // Outside the root the node stays unlinked. canonicalize
+                    // reads these nodes in the order of the array.
+                    append_node(nodes, KIND_COMMENT, s[0..0], s[pos + 4..j], parent);
                     pos = j + 3;
                 } else if starts_at(s, pos, "<![CDATA[") {
                     let j = find_lit(s, pos + 9, "]]>");
@@ -422,10 +421,8 @@ fn parse(s: const u8[:], nodes: Node[>..]&, attrs: Attr[>..]&) -> Doc, bool {
                 } else {
                     var from = name_end;
                     if from < j { from += 1; }
-                    // Outside the root the tree drops the PI.
-                    if stack.len > 0 {
-                        append_node(nodes, KIND_PI, target, s[from..j], stack[stack.len - 1]);
-                    }
+                    let owner = if stack.len > 0 { stack[stack.len - 1] } else { -1 };
+                    append_node(nodes, KIND_PI, target, s[from..j], owner);
                 }
                 pos = j + 2;
             } else {

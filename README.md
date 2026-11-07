@@ -2,58 +2,78 @@
 
 [![ci](https://github.com/rekanalar/goose-xml/actions/workflows/ci.yml/badge.svg)](https://github.com/rekanalar/goose-xml/actions/workflows/ci.yml)
 
-XML parsing and building for the [Goose](https://github.com/aardappel/goose) programming language. The rules
-are the XML 1.0 well-formedness core.
+XML for the [Goose](https://github.com/aardappel/goose) programming language. The package covers the
+API of `xml.etree.ElementTree` of Python 3.14. It reads, searches, builds, writes and canonicalizes.
 
-The package parses a document into a tree and gives a walk API over the
-tree. It builds XML text back from the tree.
-
-A pull reader gives events
-and builds no tree. The parser checks well-formedness as Python
-`ElementTree` does, and the tests compare the two. Comments, CDATA, processing instructions, the five
-predefined entities and numeric character references are in. Element and
-attribute names resolve into a namespace URI and a local name. DTDs and
-validation are out. Pure Goose, no C.
+The parser checks well-formedness as Python `ElementTree` does. The tests compare the two.
+Comments, CDATA, processing instructions, the five predefined entities and numeric character
+references are in. Names resolve into a namespace URI and a local name. DTDs and validation are out.
+Pure Goose, no C.
 
 ## Install
 
 Add this to the root file of the program that uses it:
 
 ```goose
-import xml from "rekanalar/goose-xml@v0.3.0";
+import xml from "rekanalar/goose-xml@v1.0.0";
 ```
 
 ## API
 
+Read and walk:
+
 | Function | What it does |
 |---|---|
-| `parse(s, nodes, attrs)` | parses one document into the arrays of the caller; gives `Doc, bool` |
-| `build(out, doc, root_id)` | writes the subtree as XML text |
-| `attr_lookup(doc, node, key)` | gives the attribute value; gives `value, bool` |
-| `child_at(doc, node, at)` | gives one child in document order; gives `Node&, bool` |
-| `children_count(doc, node)` | gives the number of the direct children |
-| `text_of(out, doc, node)` | writes the joined text and CDATA of the direct children, entities decoded |
-| `attr_value(out, doc, node, key)` | writes the decoded, normalized attribute value; gives `bool` |
-| `decode_entities(out, s)` | decodes the five entities and the numeric references; a literal CR or CRLF gives LF |
-| `decode_attr(out, s)` | the same, and each literal tab, LF and CR gives one space |
-| `find(doc, node, tag)` | gives the first direct child element with the tag |
-| `findall(doc, node, tag, out)` | writes the places of the matching direct children |
-| `findall_deep(doc, node, tag, out)` | writes the places of the matching descendants |
-| `attr_lookup_ns(doc, node, uri, local)` | gives an attribute by its resolved name |
+| `parse(s, nodes, attrs)` | parses one UTF-8 document into the arrays of the caller; gives `Doc, bool` |
+| `parse_bytes(data, buf, nodes, attrs)` | the same for a document in any supported encoding |
+| `decode(buf, input)` | turns bytes in a supported encoding into UTF-8; gives `text, bool` |
 | `reader(s)`, `next(r, open, attrs)` | pull reader: one event per call, no tree |
-| `ns_split(name)` | cuts a raw name into prefix and local name |
+| `iterparse(s, build, nodes, attrs, text) { kind, id, a, b => ... }` | calls the block for each event: start, end, attribute, namespace, comment, PI |
+| `child_at`, `children_count`, `find`, `findall`, `findall_deep` | direct access to children by tag |
+| `elem_text`, `elem_tail`, `iter_text` | the text, the tail and `itertext` |
+| `iter(doc, id, name, out)` | the descendants with the name; `*` gives all |
+| `get(out, doc, id, key, default)`, `keys`, `items` | attributes as `Element.get`, `keys` and `items`; keys are `{uri}local` |
+| `attr_lookup`, `attr_value`, `attr_lookup_ns` | the raw and the decoded attribute value |
+| `decode_entities`, `decode_attr` | entity and white space rules of text and attributes |
 
-`attr_lookup` gives the raw span of the value, with the entities as written.
-Use `attr_value` for the value that `ElementTree.get` gives.
-Each `Node` and `Attr` has `uri` and `local` fields. The tag of `find`
-is a local name for an element with no namespace, or `{uri}local`, as in
-Python `ElementTree`. The writer keeps the prefixes and the `xmlns`
-attributes as they are, so a namespaced document round trips.
+Search with the path language of `ElementPath`:
 
-The nodes and the attributes hold spans over the input text, so the
-input text must outlive the arrays. The parse holds no recursion and
-takes linear time; the depth limit is 256. An unknown entity, a
-duplicate attribute and a mismatched tag are parse faults.
+| Function | What it does |
+|---|---|
+| `find_path(doc, id, path)` | gives the first match; gives `id, bool` |
+| `findall_path(doc, id, path, out)` | writes all matches, as `findall` and `iterfind`; gives the count, or -1 for a bad path |
+| `findtext(out, doc, id, path, default)` | the text of the first match |
+| `find_path_ns`, `findall_path_ns`, `findtext_ns` | the same with a map of prefixes and URIs |
+
+The path language holds these words:
+
+- Steps: `tag`, `*`, `.`, `..`, `//`, `{uri}tag`, `{*}tag`, `{uri}*`
+- Tests on attributes: `[@a]`, `[@a='v']`, `[@a!='v']`
+- Tests on children: `[tag]`, `[tag='v']`, `[.='v']`
+- Positions: `[n]`, `[last()]`, `[last()-n]`
+
+Build and write:
+
+| Function | What it does |
+|---|---|
+| `element`, `sub_element`, `append`, `insert`, `remove`, `clear` | build a tree in arrays that the caller owns |
+| `set`, `set_text`, `set_tail`, `make_doc` | set attributes and text; make a `Doc` over the arrays |
+| `tostring(out, doc, id, opts)` | writes XML text as `ET.tostring`; `WriteOpts` holds `xml_declaration`, `short_empty_elements`, `method` and `default_namespace` |
+| `tostring_encoded(out, doc, id, opts, encoding)` | writes bytes in an encoding |
+| `write(path, doc, id, opts)` | writes to a file |
+| `indent(nodes, attrs, text, id, space, level)` | the pretty print of `ET.indent` |
+| `canonicalize(out, doc, opts, ...)` | C14N 2.0 as `ET.canonicalize` |
+| `encode(out, text, encoding)` | turns UTF-8 text into bytes; an unmappable character becomes a reference |
+| `build(out, doc, id)` | writes the subtree with the prefixes as parsed |
+
+The builder copies every name and text into a buffer of the caller. `method` is `METHOD_XML`,
+`METHOD_HTML` or `METHOD_TEXT`. Prefixes follow `ElementTree`: well-known ones for well-known URIs,
+`ns0`, `ns1` and so on for others. The encodings are UTF-8, UTF-16, UTF-32 and 34 single-byte pages
+with 174 names.
+
+The nodes and the attributes hold spans over the input text, so the input text must outlive the
+arrays. The parse holds no recursion and takes linear time; the depth limit is 256. An unknown
+entity, a duplicate attribute and a mismatched tag are parse faults.
 
 ```goose
 var nodes: xml::Node[>..] = [];
@@ -67,42 +87,48 @@ if ok {
 
 ## Limits
 
-- The pull reader does not resolve namespaces. It gives raw names.
-  It checks characters, names and attributes as the parser does.
-  It keeps the older rules for the prolog, DOCTYPE, comments and PIs.
-  It refuses a comment or PI after the root.
-- `find` and `findall` match direct children by tag. There is no path
-  language and no XPath. `findall_deep` matches all descendants.
-- A prefix with no declaration is a parse fault. Python `ElementTree`
-  also faults.
-- The writer makes no new prefixes. Write each prefix with its `xmlns`
-  attribute.
-- A DOCTYPE is skipped. Entities that a DTD declares are a fault, and
-  attribute defaults from an `ATTLIST` do not apply. The declarations in an
-  internal subset are not checked beyond their keyword and quotes.
-- The input is UTF-8 only. A declared encoding other than UTF-8 or
-  US-ASCII is a fault. `ElementTree` decodes other encodings.
-- Names follow the fifth edition of XML 1.0. Python expat follows the fourth edition, so the two differ on some code points. Astral names are one case.
-- The depth limit is 256. `ElementTree` accepts deeper documents.
+- The path language is `ElementPath`. There is no XPath. `lxml` has XPath 1.0.
+- A path with a prefix needs a map of prefixes. Without a map, a prefix is refused.
+  The C accelerator of Python reads some such paths in other ways, and the pure `ElementPath` is the oracle.
+- `[n]` and `[last()]` take time in proportion to the square of the siblings on wide documents, as in Python.
+- The pull reader does not resolve namespaces. `iterparse` does. The reader keeps the older rules for
+  the prolog, DOCTYPE, comments and PIs. It refuses a comment or PI after the root. `iterparse` gives no
+  events for comments and PIs in the prolog.
+- A DOCTYPE is skipped. Entities that a DTD declares are a fault. Attribute defaults from an `ATTLIST`
+  do not apply.
+- Encodings: UTF-8, UTF-16, UTF-32 and the single-byte pages of the table in `encoding_data.goose`.
+  Multi-byte East Asian encodings (`gbk`, `shift_jis`, `euc-jp`, `big5`) are out. Expat itself
+  reads only four encodings without help, and Python adds the rest through its codecs.
+- Text mode `tostring` with a declaration writes `utf-8`. Python writes the name of the locale.
+- `ET.register_namespace` is a global table in Python. `lxml` takes a map per element, and Go writes
+  explicit `xmlns` attributes. The writer takes `default_namespace` and nothing else. Use `set` with an
+  `xmlns` key in the tree, or the well-known prefixes.
+- The writer writes no comments and no processing instructions inside the tree, as the tree of
+  `ElementTree` holds none. `canonicalize` writes them when the tree holds them.
+- `indent` and `strip_text` treat ASCII white space only.
+- No `XMLPullParser` with an incremental `feed`. Pass the whole text to `iterparse`.
+- A built tree has no depth limit, and the writer recurses with the depth.
+- Names follow the fifth edition of XML 1.0. Python expat follows the fourth edition, so the two differ
+  on some code points. Astral names are one case.
 - The duplicate attribute check takes time in proportion to the square of the attributes of one element.
-  The namespace lookup walks the declarations in scope.
   5000 attributes take 0.1 s.
-- There is no tree builder, `iter`, `itertext`, `findtext`, `indent`,
-  `tostring` or `canonicalize`. The gaps are in `packages/PROPOSAL.md`.
+- Python gives an error for an empty `QName` in `qname_aware_tags`. This package does not replicate it.
 
 ## Test
 
 ```bash
 goose run test/run.goose
 goose run examples/read.goose
+goose run examples/search.goose
+goose run examples/build_tree.goose
 goose run examples/stream.goose
 goose run examples/untrusted.goose
 ```
 
 The suite holds the hand cases and the hostile cases. Each hostile case has a time bound of one second.
-It also holds 1470 cases from `test/make_xml_cases.py`.
-The script uses `ElementTree` with seed 20261107.
-There are 690 valid documents and 780 faults. 30 documents are left out as limits.
+`test/make_xml_cases.py` makes the generated cases with `ElementTree` of Python 3.14 and seed 20261107.
+It holds 1470 parser cases, and path, `iter`, `findtext`, `tostring`, `indent`, `canonicalize`, encoding
+and `iterparse` cases. `test/make_encoding_data.py` makes the tables of the encodings.
 
 ## License
 

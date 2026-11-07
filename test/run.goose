@@ -482,6 +482,10 @@ fn parses(s: const u8[:]) -> bool {
 
 fn test_xml_cases() {
     xml_cases::check_xml_cases();
+    xml_cases::check_path_cases();
+    test_builder();
+    test_events_and_files();
+    test_hostile_api();
 }
 
 // A PI with no data used to abort the program.
@@ -626,6 +630,80 @@ fn test_pull_characters() {
     assert(pull_ok("<a><?p?></a>"));
 }
 
+fn test_builder() {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let r = xml::element(nodes, text, "r");
+    assert(xml::element(nodes, text, "") < 0);
+    xml::set(nodes, attrs, text, r, "a", "1&2");
+    let b = xml::sub_element(nodes, text, r, "b");
+    let c = xml::sub_element(nodes, text, r, "c");
+    xml::set(nodes, attrs, text, b, "x", "<\"");
+    xml::set(nodes, attrs, text, r, "z", "q");
+    xml::set(nodes, attrs, text, b, "y", "2");
+    xml::set(nodes, attrs, text, r, "a", "9");
+    xml::set_text(nodes, text, b, "t<u>");
+    xml::set_text(nodes, text, b, "t2");
+    xml::set_tail(nodes, text, b, "tail&");
+    xml::set_tail(nodes, text, c, "end");
+    let d = xml::sub_element(nodes, text, r, "d");
+    assert(xml::remove(nodes, r, d));
+    assert(!xml::remove(nodes, r, d));
+    assert(!xml::append(nodes, b, r));
+    assert(!xml::append(nodes, r, b));
+    let doc = xml::make_doc(nodes, attrs, r);
+    var out: u8[>..] = [];
+    xml::build(out, doc, doc.root);
+    assert(out[..] == "<r a=\"9\" z=\"q\"><b x=\"&lt;&quot;\" y=\"2\">t2</b>tail&amp;<c/>end</r>");
+    // insert keeps the tail of the element in front; clear drops the tail.
+    let e = xml::element(nodes, text, "e");
+    assert(xml::insert(nodes, r, 1, e));
+    assert(!xml::insert(nodes, r, 0, e));
+    let f = xml::element(nodes, text, "f");
+    assert(xml::insert(nodes, r, 0, f));
+    let g = xml::element(nodes, text, "g");
+    assert(xml::insert(nodes, r, 99, g));
+    let doc2 = xml::make_doc(nodes, attrs, r);
+    var out2: u8[>..] = [];
+    xml::build(out2, doc2, doc2.root);
+    assert(out2[..] == "<r a=\"9\" z=\"q\"><f/><b x=\"&lt;&quot;\" y=\"2\">t2</b>tail&amp;<e/><c/>end<g/></r>");
+    assert(xml::clear(nodes, text, b));
+    assert(xml::clear(nodes, text, r));
+    var out3: u8[>..] = [];
+    let doc3 = xml::make_doc(nodes, attrs, r);
+    xml::build(out3, doc3, r);
+    assert(out3[..] == "<r/>");
+}
+
+fn test_events_and_files() {
+    xml_cases::expect_events_bad(1, "<a><b></a>");
+    xml_cases::expect_events_bad(2, "<a/><b/>");
+    xml_cases::expect_events_bad(3, "<p:a/>");
+    xml_cases::expect_events_bad(4, "<a p:x=\"1\"/>");
+    // A fault after some events: the events come first, then false.
+    var count = 0;
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let doc, ok = xml::iterparse("<a><b/><c></a>", false, nodes, attrs, text) { kind, id, x, y =>
+        if kind == xml::TEV_START { count += 1; }
+    };
+    assert(!ok);
+    assert(count == 3);
+    // write puts the text into a file.
+    var n2: xml::Node[>..] = [];
+    var a2: xml::Attr[>..] = [];
+    let d2, ok2 = xml::parse("<r a=\"1\"><b/></r>", n2, a2);
+    assert(ok2);
+    assert(xml::write("tmp_write_test.xml", d2, d2.root, xml::write_opts()));
+    var back: u8[>..] = [];
+    assert(read_file("tmp_write_test.xml", back));
+    assert(back[..] == "<r a=\"1\"><b /></r>");
+    delete_file("tmp_write_test.xml");
+    assert(!xml::write("no_such_dir/x.xml", d2, d2.root, xml::write_opts()));
+}
+
 fn main() {
     test_parse_element();
     test_parse_nested();
@@ -659,4 +737,37 @@ fn main() {
     test_pull_characters();
     print("all tests passed");
     return 0;
+}
+
+// The new calls take linear time on a wide document.
+fn test_hostile_api() {
+    var a: u8[>..] = [];
+    a.append("<a>");
+    repeat(a, "<b x=\"1\">t</b>", 100000);
+    a.append("</a>");
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(a[..], nodes, attrs);
+    assert(ok);
+    var t = clock_ns();
+    var ids: i32[>..] = [];
+    assert(xml::findall_path(doc, doc.root, ".//b[@x='1']", ids) == 100000);
+    var it: i32[>..] = [];
+    assert(xml::iter(doc, doc.root, "b", it) == 100000);
+    var tx: u8[>..] = [];
+    assert(xml::iter_text(tx, doc, doc.root));
+    var out: u8[>..] = [];
+    assert(xml::tostring(out, doc, doc.root, xml::write_opts()));
+    var c: u8[>..] = [];
+    assert(xml::canonicalize(c, doc, xml::c14n_opts(), [""], [""], [""], [""]));
+    elapsed_ok(t);
+    t = clock_ns();
+    var text: u8[>..] = [];
+    var events: i64 = 0;
+    var n2: xml::Node[>..] = [];
+    var a2: xml::Attr[>..] = [];
+    let d2, ok2 = xml::iterparse(a[..], true, n2, a2, text) { kind, id, p, q => events += 1; };
+    assert(ok2);
+    assert(events > 200000);
+    elapsed_ok(t);
 }

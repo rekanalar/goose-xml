@@ -140,3 +140,352 @@ fn expect_bad(id: i64, s: const u8[:]) {
         assert(false);
     }
 }
+
+// tag_text writes the tag of the node as ElementTree writes it.
+fn tag_text(out: u8[>..]&, doc: xml::Doc&, id: i32) {
+    let node = doc.nodes[id];
+    if node.uri.len > 0 {
+        out.push('{');
+        out.append(node.uri);
+        out.push('}');
+    }
+    out.append(node.local);
+}
+
+// expect_path checks the elements that match the path.
+fn expect_path(id: i64, s: const u8[:], path: const u8[:], want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("path case ", id, " refused the document"); assert(false); }
+    var ids: i32[>..] = [];
+    let n = xml::findall_path(doc, doc.root, path, ids);
+    if n < 0 { print("path case ", id, " refused the path: ", path); assert(false); }
+    var got: u8[>..] = [];
+    var i = 0;
+    while i < ids.len {
+        if i > 0 { got.push('|'); }
+        tag_text(got, doc, ids[i]);
+        i += 1;
+    }
+    if got[..] != want {
+        print("path case ", id, " differs. path: ", path, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_path_bad checks that the path is refused.
+fn expect_path_bad(id: i64, s: const u8[:], path: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("path case ", id, " refused the document"); assert(false); }
+    var ids: i32[>..] = [];
+    let n = xml::findall_path(doc, doc.root, path, ids);
+    if n >= 0 {
+        print("path case ", id, " took the path: ", path);
+        assert(false);
+    }
+}
+
+// expect_iter checks the elements of the subtree.
+fn expect_iter(id: i64, s: const u8[:], tag: const u8[:], want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("iter case ", id, " refused the document"); assert(false); }
+    var ids: i32[>..] = [];
+    xml::iter(doc, doc.root, tag, ids);
+    var got: u8[>..] = [];
+    var i = 0;
+    while i < ids.len {
+        if i > 0 { got.push('|'); }
+        tag_text(got, doc, ids[i]);
+        i += 1;
+    }
+    if got[..] != want {
+        print("iter case ", id, " differs. tag: ", tag, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_itertext checks the text of the subtree.
+fn expect_itertext(id: i64, s: const u8[:], want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("text case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    if !xml::iter_text(got, doc, doc.root) {
+        print("text case ", id, " failed");
+        assert(false);
+    }
+    if got[..] != want {
+        print("text case ", id, " differs.\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_findtext checks the text of the first match.
+fn expect_findtext(id: i64, s: const u8[:], path: const u8[:], want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("findtext case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    if !xml::findtext(got, doc, doc.root, path, "") {
+        print("findtext case ", id, " found nothing: ", path);
+        assert(false);
+    }
+    if got[..] != want {
+        print("findtext case ", id, " differs. path: ", path, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_findtext_none checks that no element matches.
+fn expect_findtext_none(id: i64, s: const u8[:], path: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("findtext case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    if xml::findtext(got, doc, doc.root, path, "") {
+        print("findtext case ", id, " found something: ", path);
+        assert(false);
+    }
+}
+
+// expect_attrs checks the names and the values of the attributes.
+fn expect_attrs(id: i64, s: const u8[:], want_keys: const u8[:], want_items: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("attr case ", id, " refused the document"); assert(false); }
+    var kbuf: u8[>..] = [];
+    var names: const u8[:][>..] = [];
+    xml::keys(doc, doc.root, kbuf, names);
+    var got_keys: u8[>..] = [];
+    var i = 0;
+    while i < names.len {
+        if i > 0 { got_keys.push('|'); }
+        got_keys.append(names[i]);
+        i += 1;
+    }
+    if got_keys[..] != want_keys {
+        print("attr case ", id, " differs.\n  want ", want_keys, "\n  got  ", got_keys[..]);
+        assert(false);
+    }
+    var buf: u8[>..] = [];
+    var pairs: xml::Pair[>..] = [];
+    xml::items(doc, doc.root, buf, pairs);
+    var got_items: u8[>..] = [];
+    var j = 0;
+    while j < pairs.len {
+        if j > 0 { got_items.push('|'); }
+        got_items.append(pairs[j].name);
+        got_items.push('=');
+        got_items.append(pairs[j].value);
+        j += 1;
+    }
+    if got_items[..] != want_items {
+        print("attr case ", id, " differs.\n  want ", want_items, "\n  got  ", got_items[..]);
+        assert(false);
+    }
+}
+
+// expect_tostring checks the text that the writer makes.
+fn expect_tostring(id: i64, s: const u8[:], short_empty: bool, decl: bool, want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("write case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    let opts = xml::WriteOpts { xml_declaration: if decl { xml::DECL_YES as i32 } else { xml::DECL_AUTO as i32 }, short_empty_elements: short_empty, method: xml::METHOD_XML as i32, default_namespace: "" };
+    if !xml::tostring(got, doc, doc.root, opts) { print("write case ", id, " failed"); assert(false); }
+    if got[..] != want {
+        print("write case ", id, " differs. doc: ", s, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_indent checks the text after indent.
+fn expect_indent(id: i64, s: const u8[:], space: const u8[:], level: i64, want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { print("indent case ", id, " refused the document"); assert(false); }
+    let root = doc.root;
+    if !xml::indent(nodes, attrs, text, root, space, level) { print("indent case ", id, " failed"); assert(false); }
+    let again = xml::make_doc(nodes, attrs, root);
+    var got: u8[>..] = [];
+    if !xml::tostring(got, again, root, xml::write_opts()) { print("indent case ", id, " failed to write"); assert(false); }
+    if got[..] != want {
+        print("indent case ", id, " differs. doc: ", s, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_c14n checks the canonical form. An empty want with ok false means
+// that the call must fail.
+fn expect_c14n(id: i64, s: const u8[:], wc: bool, st: bool, rw: bool,
+        et: const u8[:][:], ea: const u8[:][:], qt: const u8[:][:], qa: const u8[:][:],
+        ok: bool, want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, pok = xml::parse(s, nodes, attrs);
+    if !pok { print("c14n case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    let opts = xml::C14nOpts { with_comments: wc, strip_text: st, rewrite_prefixes: rw };
+    let res = xml::canonicalize(got, doc, opts, et, ea, qt, qa);
+    if res != ok { print("c14n case ", id, " result ", res, " for ", s); assert(false); }
+    if ok && got[..] != want {
+        print("c14n case ", id, " differs. doc: ", s, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// render_enc parses bytes in any supported encoding and renders the tree.
+fn render_enc(out: u8[>..]&, s: const u8[:]) -> bool {
+    var buf: u8[>..] = [];
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse_bytes(s, buf, nodes, attrs);
+    if !ok { return false; }
+    var raw: u8[>..] = [];
+    walk(raw, doc, doc.root);
+    merge(out, raw[..]);
+    return true;
+}
+
+// expect_enc_ok checks a document in an encoding.
+fn expect_enc_ok(id: i64, s: const u8[:], want: const u8[:]) {
+    var got: u8[>..] = [];
+    if !render_enc(got, s) { print("encoding case ", id, " refused: ", s); assert(false); }
+    if got[..] != want {
+        print("encoding case ", id, " differs: ", s, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_enc_bad checks that a document in an encoding is refused.
+fn expect_enc_bad(id: i64, s: const u8[:]) {
+    var got: u8[>..] = [];
+    if render_enc(got, s) { print("encoding case ", id, " accepted: ", s); assert(false); }
+}
+
+// expect_encode checks the bytes that encode makes from a text.
+fn expect_encode(id: i64, text: const u8[:], encoding: const u8[:], ok: bool, want: const u8[:]) {
+    var got: u8[>..] = [];
+    let res = xml::encode(got, text, encoding);
+    if res != ok { print("encode case ", id, " result ", res, " for ", encoding); assert(false); }
+    if ok && got[..] != want {
+        print("encode case ", id, " differs for ", encoding, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_tostring_enc checks the bytes of tostring with an encoding.
+fn expect_tostring_enc(id: i64, s: const u8[:], encoding: const u8[:], decl: i32, ok: bool, want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, pok = xml::parse(s, nodes, attrs);
+    if !pok { print("write case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    let opts = xml::WriteOpts { xml_declaration: decl, short_empty_elements: true, method: xml::METHOD_XML as i32, default_namespace: "" };
+    let res = xml::tostring_encoded(got, doc, doc.root, opts, encoding);
+    if res != ok { print("write case ", id, " result ", res, " for ", encoding); assert(false); }
+    if ok && got[..] != want {
+        print("write case ", id, " differs for ", encoding, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_events checks the events of iterparse and the tree that it builds.
+fn expect_events(id: i64, s: const u8[:], want_events: const u8[:], want_tree: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    var ev: u8[>..] = [];
+    let doc, ok = xml::iterparse(s, true, nodes, attrs, text) { kind, eid, a, b =>
+        if kind != xml::TEV_TEXT {
+            if ev.len > 0 { ev.push(' '); }
+            if kind == xml::TEV_START { ev.append("S "); }
+            else if kind == xml::TEV_END { ev.append("E "); }
+            else if kind == xml::TEV_ATTR { ev.append("A "); }
+            else if kind == xml::TEV_START_NS { ev.append("N "); }
+            else if kind == xml::TEV_END_NS { ev.append("n "); }
+            else if kind == xml::TEV_COMMENT { ev.append("C "); }
+            else { ev.append("P "); }
+            hex(ev, if kind == xml::TEV_END_NS { "" } else { a });
+            if kind == xml::TEV_ATTR || kind == xml::TEV_START_NS || kind == xml::TEV_PI {
+                ev.push(' ');
+                hex(ev, b);
+            }
+        }
+    };
+    if !ok { print("event case ", id, " refused: ", s); assert(false); }
+    if ev[..] != want_events {
+        print("event case ", id, " events differ: ", s, "\n  want ", want_events, "\n  got  ", ev[..]);
+        assert(false);
+    }
+    var raw: u8[>..] = [];
+    walk(raw, doc, doc.root);
+    var got: u8[>..] = [];
+    merge(got, raw[..]);
+    if got[..] != want_tree {
+        print("event case ", id, " tree differs: ", s, "\n  want ", want_tree, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_events_bad checks that iterparse refuses the document.
+fn expect_events_bad(id: i64, s: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let doc, ok = xml::iterparse(s, true, nodes, attrs, text) { kind, eid, a, b => };
+    if ok { print("event case ", id, " accepted: ", s); assert(false); }
+}
+
+// expect_path_ns checks a path with a map of prefixes. An empty want with
+// ok false means that the path is refused.
+fn expect_path_ns(id: i64, s: const u8[:], path: const u8[:], prefixes: const u8[:][:], uris: const u8[:][:], ok: bool, want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, pok = xml::parse(s, nodes, attrs);
+    if !pok { print("path case ", id, " refused the document"); assert(false); }
+    var ids: i32[>..] = [];
+    let n = xml::findall_path_ns(doc, doc.root, path, prefixes, uris, ids);
+    if (n >= 0) != ok { print("path case ", id, " result ", n, " for path ", path); assert(false); }
+    if !ok { return; }
+    var got: u8[>..] = [];
+    var i = 0;
+    while i < ids.len {
+        if i > 0 { got.push('|'); }
+        tag_text(got, doc, ids[i]);
+        i += 1;
+    }
+    if got[..] != want {
+        print("path case ", id, " differs. path: ", path, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
+
+// expect_tostring_m checks the writer with a method and a default namespace.
+// An ok of false means that the call must fail.
+fn expect_tostring_m(id: i64, s: const u8[:], method: i32, dflt: const u8[:], short_empty: bool, ok: bool, want: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, pok = xml::parse(s, nodes, attrs);
+    if !pok { print("write case ", id, " refused the document"); assert(false); }
+    var got: u8[>..] = [];
+    let opts = xml::WriteOpts { xml_declaration: xml::DECL_AUTO as i32, short_empty_elements: short_empty, method: method, default_namespace: dflt };
+    let res = xml::tostring(got, doc, doc.root, opts);
+    if res != ok { print("write case ", id, " result ", res, " for ", s); assert(false); }
+    if ok && got[..] != want {
+        print("write case ", id, " differs. doc: ", s, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+}
