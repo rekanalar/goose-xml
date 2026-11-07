@@ -2,8 +2,8 @@
 //
 // build writes a subtree of the tree as XML text into the buffer of the
 // caller. The walk follows the child and sibling links with an explicit
-// stack, so no recursion runs. Text escapes '<', '>' and '&'. Attribute
-// values escape '<', '>', '&' and '"'. Comments and CDATA write
+// stack, so no recursion runs. Text escapes '<', '>', '&' and CR. Attribute
+// values escape '<', '>', '&', '"', tab, LF and CR. Comments and CDATA write
 // verbatim.
 namespace xml;
 
@@ -18,6 +18,8 @@ fn encode_text(out: u8[>..]&, s: const u8[:]) {
             out.append("&gt;");
         } else if c == '&' {
             out.append("&amp;");
+        } else if c == '\r' {
+            out.append("&#13;");
         } else {
             out.push(c);
         }
@@ -34,6 +36,12 @@ fn encode_attr(out: u8[>..]&, s: const u8[:]) {
             out.append("&amp;");
         } else if c == '"' {
             out.append("&quot;");
+        } else if c == '\t' {
+            out.append("&#9;");
+        } else if c == '\n' {
+            out.append("&#10;");
+        } else if c == '\r' {
+            out.append("&#13;");
         } else {
             out.push(c);
         }
@@ -96,7 +104,7 @@ fn build(out: u8[>..]&, doc: Doc&, root_id: i32) {
                 out.append(attr.name);
                 out.append("=\"");
                 scratch.clear();
-                decode_entities(scratch, attr.value);
+                decode_attr(scratch, attr.value);
                 encode_attr(out, scratch[..]);
                 out.append("\"");
                 a += 1;

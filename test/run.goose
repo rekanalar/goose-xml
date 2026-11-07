@@ -4,7 +4,9 @@
 // and round trips over many documents.
 
 import std;
+import os;
 import xml from "..";
+import xml_cases;
 
 fn expect_fault(s: const u8[:]) {
     var nodes: xml::Node[>..] = [];
@@ -458,6 +460,172 @@ fn test_pull_large() {
     assert(starts == 20001);
 }
 
+// elapsed_ok checks one hostile call against the time bound of one second.
+fn elapsed_ok(start: i64) {
+    assert(clock_ns() - start < 1000000000);
+}
+
+fn repeat(out: u8[>..]&, s: const u8[:], n: i64) {
+    var i = 0;
+    while i < n {
+        out.append(s);
+        i += 1;
+    }
+}
+
+fn parses(s: const u8[:]) -> bool {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    return ok;
+}
+
+fn test_xml_cases() {
+    xml_cases::check_xml_cases();
+}
+
+// A PI with no data used to abort the program.
+fn test_pi_without_data() {
+    assert(parses("<a><?p?></a>"));
+    assert(parses("<a><?p ?></a>"));
+    assert(!parses("<a><?p d</a>"));
+    assert(!parses("<a><?xml d?></a>"));
+    assert(!parses("<a><?pd/></a>"));
+}
+
+fn test_hostile() {
+    var a: u8[>..] = [];
+    a.append("<a>");
+    repeat(a, "<b/>", 100000);
+    a.append("</a>");
+    var t = clock_ns();
+    assert(parses(a[..]));
+    elapsed_ok(t);
+
+    var c: u8[>..] = [];
+    c.append("<a>");
+    repeat(c, "<!--x-->", 100000);
+    c.append("</a>");
+    t = clock_ns();
+    assert(parses(c[..]));
+    elapsed_ok(t);
+
+    var at: u8[>..] = [];
+    at.append("<a");
+    var i = 0;
+    while i < 5000 {
+        at.append(" x");
+        var d: u8[>..] = [];
+        var v = i;
+        while v > 0 { d.push(('0' as i64 + v % 10) as u8); v = v / 10; }
+        d.push('_');
+        at.append(d[..]);
+        at.append("=\"1\"");
+        i += 1;
+    }
+    at.append("/>");
+    t = clock_ns();
+    assert(parses(at[..]));
+    elapsed_ok(t);
+
+    var e: u8[>..] = [];
+    e.append("<a>");
+    repeat(e, "&amp;", 200000);
+    e.append("</a>");
+    t = clock_ns();
+    assert(parses(e[..]));
+    elapsed_ok(t);
+
+    var f: u8[>..] = [];
+    repeat(f, "<a>", 255);
+    repeat(f, "<b p=\"1\"/>", 20000);
+    repeat(f, "</a>", 255);
+    t = clock_ns();
+    assert(parses(f[..]));
+    elapsed_ok(t);
+
+    var g: u8[>..] = [];
+    repeat(g, "<a>", 100000);
+    t = clock_ns();
+    assert(!parses(g[..]));
+    elapsed_ok(t);
+}
+
+fn test_text_and_attr_readers() {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse("<a x=\"&amp;1\" y=\"a\tb\r\nc&#10;d\">p<![CDATA[q<\r\n]]>r&lt;</a>", nodes, attrs);
+    assert(ok);
+    let root = doc.nodes[doc.root];
+    var text: u8[>..] = [];
+    assert(xml::text_of(text, doc, root));
+    assert(text == "pq<\nr<");
+    var v: u8[>..] = [];
+    assert(xml::attr_value(v, doc, root, "x"));
+    assert(v == "&1");
+    var w: u8[>..] = [];
+    assert(xml::attr_value(w, doc, root, "y"));
+    assert(w == "a b c\nd");
+    var none: u8[>..] = [];
+    assert(!xml::attr_value(none, doc, root, "z"));
+    assert(none.len == 0);
+    // The raw reader keeps its result.
+    let raw, found = xml::attr_lookup(doc, root, "x");
+    assert(found);
+    assert(raw == "&amp;1");
+    var d: u8[>..] = [];
+    assert(xml::decode_entities(d, "x\r\ny\rz"));
+    assert(d == "x\ny\nz");
+    var d2: u8[>..] = [];
+    assert(xml::decode_attr(d2, "x\r\ny\tz&#9;"));
+    assert(d2 == "x y z\t");
+}
+
+fn test_last_child_links() {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse("<a><b/><c/><d/></a>", nodes, attrs);
+    assert(ok);
+    let root = doc.nodes[doc.root];
+    assert(doc.nodes[root.last_child].name == "d");
+    assert(doc.nodes[root.first_child].name == "b");
+}
+
+// The stated limits keep their v0.2.0 results.
+fn test_stated_limits() {
+    assert(!parses("<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?><a/>"));
+    assert(parses("<?xml version=\"1.0\" encoding=\"utf-8\"?><a/>"));
+    assert(parses("<?xml version=\"1.0\" encoding=\"US-ASCII\"?><a/>"));
+    assert(!parses("<!DOCTYPE a [<!ENTITY e \"v\">]><a>&e;</a>"));
+    assert(parses("<!DOCTYPE a [<!ATTLIST a x CDATA \"d\">]><a/>"));
+    var deep: u8[>..] = [];
+    repeat(deep, "<a>", 257);
+    repeat(deep, "</a>", 257);
+    assert(!parses(deep[..]));
+}
+
+fn pull_ok(s: const u8[:]) -> bool {
+    var r = xml::reader(s);
+    var open: xml::Open[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    while true {
+        let ev, ok = xml::next(r, open, attrs);
+        if !ok { return false; }
+        if ev.kind == xml::EV_EOF { return true; }
+    }
+    return true;
+}
+
+fn test_pull_characters() {
+    assert(pull_ok("\xef\xbb\xbf<a/>"));
+    assert(pull_ok("<\xc3\xa9 x=\"1\">\xe6\xb0\xb4</\xc3\xa9>"));
+    assert(!pull_ok("<a>\x01</a>"));
+    assert(!pull_ok("<a>\xff</a>"));
+    assert(!pull_ok("<a>\xef\xbf\xbe</a>"));
+    assert(!pull_ok("<a b=\"1\"c=\"2\"/>"));
+    assert(pull_ok("<a><?p?></a>"));
+}
+
 fn main() {
     test_parse_element();
     test_parse_nested();
@@ -482,6 +650,13 @@ fn main() {
     test_pull();
     test_pull_faults();
     test_pull_large();
+    test_xml_cases();
+    test_pi_without_data();
+    test_hostile();
+    test_text_and_attr_readers();
+    test_last_child_links();
+    test_stated_limits();
+    test_pull_characters();
     print("all tests passed");
     return 0;
 }

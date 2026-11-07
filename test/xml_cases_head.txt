@@ -1,0 +1,142 @@
+namespace xml_cases;
+// Generated-case helpers. The generator copies this text into test/xml_cases.goose.
+import std;
+import xml from "..";
+
+fn hex(out: u8[>..]&, s: const u8[:]) {
+    let digits = "0123456789abcdef";
+    var i = 0;
+    while i < s.len {
+        out.push(digits[(s[i] >> 4) as i64]);
+        out.push(digits[(s[i] & 15) as i64]);
+        i += 1;
+    }
+}
+
+fn is_decl(name: const u8[:]) -> bool {
+    if name == "xmlns" { return true; }
+    if name.len > 6 && name[0..6] == "xmlns:" { return true; }
+    return false;
+}
+
+recursive fn walk(out: u8[>..]&, doc: xml::Doc&, id: i32) {
+    let n = doc.nodes[id];
+    if n.kind == xml::KIND_TEXT {
+        var dec: u8[>..] = [];
+        xml::decode_entities(dec, n.content);
+        out.append("|");
+        hex(out, dec[..]);
+        return;
+    }
+    if n.kind == xml::KIND_CDATA {
+        var cd: u8[>..] = [];
+        var k = 0;
+        while k < n.content.len { k = xml::put_literal(cd, n.content, k, false); }
+        out.append("|");
+        hex(out, cd[..]);
+        return;
+    }
+    if n.kind != xml::KIND_ELEMENT { return; }
+    out.append("E{");
+    if n.uri.len > 0 {
+        out.append("{");
+        out.append(n.uri);
+        out.append("}");
+    }
+    out.append(n.local);
+    out.append(";");
+    var k = 0;
+    var first = true;
+    while k < n.attr_count {
+        let a = doc.attrs[n.attr_start + k];
+        k += 1;
+        if is_decl(a.name) { continue; }
+        if !first { out.append(";"); }
+        first = false;
+        if a.uri.len > 0 {
+            out.append("{");
+            out.append(a.uri);
+            out.append("}");
+        }
+        out.append(a.local);
+        out.append("=");
+        var dec: u8[>..] = [];
+        xml::decode_attr(dec, a.value);
+        hex(out, dec[..]);
+    }
+    out.append("}");
+    var c = n.first_child;
+    while c >= 0 {
+        walk(out, doc, c);
+        c = doc.nodes[c].next_sibling;
+    }
+    out.append("/");
+}
+
+// merge joins adjacent text runs and drops empty runs, as the oracle does.
+fn merge(out: u8[>..]&, s: const u8[:]) {
+    var i = 0;
+    while i < s.len {
+        if s[i] != '|' {
+            out.push(s[i]);
+            i += 1;
+            continue;
+        }
+        var run: u8[>..] = [];
+        while i < s.len && s[i] == '|' {
+            i += 1;
+            while i < s.len && ((s[i] >= '0' && s[i] <= '9') || (s[i] >= 'a' && s[i] <= 'f')) {
+                run.push(s[i]);
+                i += 1;
+            }
+        }
+        if run.len > 0 {
+            out.push('|');
+            out.append(run[..]);
+        }
+    }
+}
+
+fn render_of(out: u8[>..]&, s: const u8[:]) -> bool {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if !ok { return false; }
+    var raw: u8[>..] = [];
+    walk(raw, doc, doc.root);
+    merge(out, raw[..]);
+    return true;
+}
+
+fn expect_ok(id: i64, s: const u8[:], want: const u8[:]) {
+    var got: u8[>..] = [];
+    if !render_of(got, s) {
+        print("case ", id, " refused: ", s);
+        assert(false);
+    }
+    if got[..] != want {
+        print("case ", id, " differs: ", s, "\n  want ", want, "\n  got  ", got[..]);
+        assert(false);
+    }
+    // The writer output must parse again to the same tree.
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    var built: u8[>..] = [];
+    xml::build(built, doc, doc.root);
+    var again: u8[>..] = [];
+    if !render_of(again, built[..]) || again[..] != want {
+        print("case ", id, " round trip: ", built[..]);
+        assert(false);
+    }
+}
+
+fn expect_bad(id: i64, s: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(s, nodes, attrs);
+    if ok {
+        print("case ", id, " accepted: ", s);
+        assert(false);
+    }
+}

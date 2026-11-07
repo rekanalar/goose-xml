@@ -47,11 +47,12 @@ struct Reader {
     pending_name: const u8[:],
     root_seen: bool,
     done: bool,
+    checked: bool,
 }
 
 // reader starts a reader over the text. The text must outlive it.
 fn reader(s: const u8[:]) -> Reader {
-    return Reader { s: s, pos: 0, pending: false, pending_name: s[0..0], root_seen: false, done: false };
+    return Reader { s: s, pos: 0, pending: false, pending_name: s[0..0], root_seen: false, done: false, checked: false };
 }
 
 // next reads one event. The open array holds the names of the open
@@ -62,6 +63,12 @@ fn next(r: Reader&, open: Open[>..]&, attrs: Attr[>..]&) -> Event, bool {
     let s = r.s;
     let none = Event { kind: EV_EOF, name: s[0..0], content: s[0..0] };
     attrs.clear();
+    if !r.checked {
+        // The first call skips a byte order mark and checks every character.
+        r.checked = true;
+        if starts_at(s, 0, "\xef\xbb\xbf") { r.pos = 3; }
+        if !check_chars(s, r.pos) { return none, false; }
+    }
     if r.pending {
         r.pending = false;
         if open.len == 0 { r.done = true; }
@@ -137,6 +144,7 @@ fn next(r: Reader&, open: Open[>..]&, attrs: Attr[>..]&) -> Event, bool {
             let name_end = read_name(s, pos + 2);
             if name_end < 0 || name_end > j { return none, false; }
             let target = s[pos + 2..name_end];
+            if find_colon(target) >= 0 { return none, false; }
             r.pos = j + 2;
             if target == "xml" || target == "XML" || open.len == 0 { continue; }
             var from = name_end + 1;

@@ -41,6 +41,7 @@ struct Node {
     content: const u8[:],
     parent: i32,
     first_child: i32,
+    last_child: i32,
     next_sibling: i32,
     attr_start: i32,
     attr_count: i32,
@@ -100,9 +101,21 @@ fn children_count(doc: Doc&, n: Node&) -> i32 {
 }
 
 // decode_entities writes s with the entities decoded into out. The five
-// predefined names and the numeric character references decode. An
-// unknown name returns false and writes nothing more.
+// predefined names and the numeric character references decode. A literal
+// CRLF or CR gives one LF, as the line end rule of XML says. An unknown
+// name returns false and writes nothing more.
 fn decode_entities(out: u8[>..]&, s: const u8[:]) -> bool {
+    return decode_with(out, s, false);
+}
+
+// decode_attr is decode_entities with the attribute rule: each literal
+// tab, line feed and carriage return gives one space. A CRLF pair gives
+// one space. A character reference keeps its value.
+fn decode_attr(out: u8[>..]&, s: const u8[:]) -> bool {
+    return decode_with(out, s, true);
+}
+
+fn decode_with(out: u8[>..]&, s: const u8[:], attr: bool) -> bool {
     var i = 0;
     while i < s.len {
         if s[i] == '&' {
@@ -129,11 +142,28 @@ fn decode_entities(out: u8[>..]&, s: const u8[:]) -> bool {
             }
             i = end + 1;
         } else {
-            out.push(s[i]);
-            i += 1;
+            i = put_literal(out, s, i, attr);
         }
     }
     return true;
+}
+
+// put_literal writes the literal byte at i and gives the next place. A CRLF
+// pair or a CR is one line end. In an attribute a line end, a tab or a
+// line feed gives one space.
+fn put_literal(out: u8[>..]&, s: const u8[:], i: i64, attr: bool) -> i64 {
+    let c = s[i];
+    if c == '\r' {
+        if attr { out.push(' '); } else { out.push('\n'); }
+        if i + 1 < s.len && s[i + 1] == '\n' { return i + 2; }
+        return i + 1;
+    }
+    if attr && (c == '\t' || c == '\n') {
+        out.push(' ');
+    } else {
+        out.push(c);
+    }
+    return i + 1;
 }
 
 // char_ref reads the number of a character reference. The text holds
@@ -142,7 +172,7 @@ fn decode_entities(out: u8[>..]&, s: const u8[:]) -> bool {
 fn char_ref(digits: const u8[:]) -> i64, bool {
     if digits.len == 0 { return 0, false; }
     var cp: i64 = 0;
-    if digits[0] == 'x' || digits[0] == 'X' {
+    if digits[0] == 'x' {
         if digits.len == 1 { return 0, false; }
         var i: i64 = 1;
         while i < digits.len {
@@ -201,18 +231,35 @@ fn write_utf8(out: u8[>..]&, cp: i64) {
     }
 }
 
-// text_of writes the direct text children of the element, joined, with
-// the entities decoded, into out.
+// text_of writes the direct text and CDATA children of the element,
+// joined, into out. Text has its entities decoded. Both have the line end
+// rule applied.
 fn text_of(out: u8[>..]&, doc: Doc&, n: Node&) -> bool {
     var child_id = n.first_child;
     while child_id >= 0 {
         let child = doc.nodes[child_id];
         if child.kind == KIND_TEXT {
             if !decode_entities(out, child.content) { return false; }
+        } else if child.kind == KIND_CDATA {
+            var k = 0;
+            while k < child.content.len { k = put_literal(out, child.content, k, false); }
         }
         child_id = child.next_sibling;
     }
     return true;
+}
+
+// attr_value writes the decoded value of an attribute into out: the
+// entities decode and the white space normalizes. It gives false when the
+// attribute is absent.
+fn attr_value(out: u8[>..]&, doc: Doc&, n: Node&, key: const u8[:]) -> bool {
+    var i = 0;
+    while i < n.attr_count {
+        let a = doc.attrs[n.attr_start + i];
+        if a.name == key { return decode_attr(out, a.value); }
+        i += 1;
+    }
+    return false;
 }
 
 // find_colon gives the place of the colon in a qualified name, or -1.
