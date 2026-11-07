@@ -65,34 +65,6 @@ if ok {
 }
 ```
 
-## Changes in v0.3.0
-
-The parser now follows `ElementTree` on well-formedness. These inputs
-gave a tree before and give a fault now:
-
-- a control byte other than tab, LF and CR, invalid UTF-8, U+FFFE and U+FFFF
-- `]]>` in text, `--` in a comment, a comment that ends in `--->`
-- `<![cdata[` and other `<!` markup that is not a comment, CDATA or DOCTYPE
-- two attributes with no space between them
-- an XML declaration that is late, has no version, or names an encoding other than UTF-8 or US-ASCII
-- the target `xml` in any case in a PI after the declaration, and a colon in a PI target
-- a DOCTYPE inside the root, a second DOCTYPE, and a DOCTYPE with a bad name or identifier
-- `&#X41;` with a capital X
-- `xmlns:p=""`, `xmlns:xml` with another URI, `xmlns:xmlns`, a binding to the `xmlns` URI
-- a name with two colons or an empty part, and two attributes with one expanded name
-
-These inputs gave a fault before and give a tree now:
-
-- `<a><?p?></a>`, which aborted the program
-- non-ASCII names such as `<é/>`, and a leading byte order mark
-- a comment or PI after the root; the tree drops it
-
-These results changed:
-
-- `text_of` includes CDATA. A literal CR or CRLF in text gives LF.
-- `build` writes CR in text, and tab, LF and CR in attributes, as character references. The output parses back to the same tree.
-- A document of 100000 siblings parsed in 41 s before. It parses in under 0.1 s.
-
 ## Limits
 
 - The pull reader does not resolve namespaces. It gives raw names.
