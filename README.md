@@ -15,7 +15,7 @@ Pure Goose, no C.
 Add this to the root file of the program that uses it:
 
 ```goose
-import xml from "rekanalar/goose-xml@v1.0.0";
+import xml from "rekanalar/goose-xml@v2.0.0";
 ```
 
 ## API
