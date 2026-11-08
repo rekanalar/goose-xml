@@ -113,18 +113,18 @@ if ok {
 - The duplicate attribute check takes time in proportion to the square of the attributes of one element.
   5000 attributes take 0.1 s.
 - Python gives an error for an empty `QName` in `qname_aware_tags`. This package does not replicate it.
-- The version of the XML declaration. This package accepts any version, as `ElementTree` does. `lxml` refuses a version above 1.0. Go `encoding/xml` refuses any version but 1.0. `quick-xml` and `fast-xml-parser` accept any version.
-- A duplicate attribute. This package refuses it, as `ElementTree` and `lxml` do. Go `encoding/xml` keeps both attributes. `quick-xml` keeps both. `fast-xml-parser` keeps the last one.
+- The version of the XML declaration. This package accepts any version, as `ElementTree` does. `lxml` accepts a version of the form 1.N and refuses any other. Go `encoding/xml` refuses any version but 1.0. `quick-xml` and `fast-xml-parser` accept any version.
+- A duplicate attribute. This package refuses it, as `ElementTree` and `lxml` do. `quick-xml` refuses the second one. Go `encoding/xml` keeps both attributes. `fast-xml-parser` keeps the last one.
 - An unbound prefix in an element name. This package refuses it, as `ElementTree` and `lxml` do. Go `encoding/xml` accepts it and puts the prefix in the namespace. `quick-xml` and `fast-xml-parser` accept it and keep the prefix in the name.
-- An unbound prefix in an attribute name. This package accepts it, as `ElementTree` does. Go `encoding/xml`, `quick-xml` and `fast-xml-parser` accept it. `lxml` refuses it.
-- The `xmlns` declaration. This package keeps it as an attribute, as `ElementTree` and Go `encoding/xml` do. `quick-xml` keeps it too. `lxml` moves it into the namespace map. `fast-xml-parser` ignores it.
+- An unbound prefix in an attribute name. This package refuses it, as `ElementTree` and `lxml` do. Go `encoding/xml`, `quick-xml` and `fast-xml-parser` accept it and keep the prefix in the name.
+- The `xmlns` declaration. This package keeps it as an attribute, as Go `encoding/xml` and `quick-xml` do. `ElementTree` and `lxml` move it into the namespace map. `lxml` keeps the declaration in the text it writes back. `fast-xml-parser` keeps it as an attribute when the attributes are on, and ignores it in the default settings.
 - The text of an element after a comment or a processing instruction. This package keeps the text, as `ElementTree` does. Go `encoding/xml`, `quick-xml` and `fast-xml-parser` keep it. `lxml` stops the text at the comment, because it keeps the comment as a child.
-- A tab or a newline in an attribute value. This package turns it into a space, as `ElementTree` and `lxml` do. Go `encoding/xml` and `quick-xml` keep it. `fast-xml-parser` trims the value.
-- A name with U+00B7 as its first character. This package refuses it, as `ElementTree` and `lxml` do. Go `encoding/xml`, `quick-xml` and `fast-xml-parser` accept it.
-- A picture deeper than 256 levels. This package refuses it, as `ElementTree` and `lxml` do. Go `encoding/xml` and `quick-xml` accept it. `fast-xml-parser` refuses it for its own reasons.
-- The entities of an internal subset. This package refuses the document, as `ElementTree` and Go `encoding/xml` do. `lxml` and `fast-xml-parser` expand the entities. `quick-xml` leaves them.
+- A tab or a newline in an attribute value. This package turns it into a space, as `ElementTree` and `lxml` do. Go `encoding/xml` and `quick-xml` keep it. `fast-xml-parser` keeps it inside the value and trims the spaces at the ends.
+- A name with U+00B7 as its first character. This package refuses it, as `ElementTree`, `lxml` and Go `encoding/xml` do. `quick-xml` and `fast-xml-parser` accept it.
+- A picture deeper than 256 levels. This package refuses it, as `lxml` does. `lxml` refuses it at 257 levels. `ElementTree`, Go `encoding/xml` and `quick-xml` accept any depth. `fast-xml-parser` refuses it for its own reasons.
+- The entities of an internal subset. This package refuses the document, as Go `encoding/xml` does. `ElementTree`, `lxml` and `fast-xml-parser` expand the entities. `quick-xml` leaves them.
 - An unknown entity. This package refuses the document, as `ElementTree`, `lxml` and Go `encoding/xml` do. `quick-xml` gives the entity as its own event. `fast-xml-parser` leaves it as text.
-- A document that is not well formed. This package refuses it, as `ElementTree`, `lxml` and Go `encoding/xml` do. `quick-xml` and `fast-xml-parser` accept it.
+- A document that is not well formed. This package refuses it, as `ElementTree`, `lxml`, Go `encoding/xml` and `quick-xml` do. `fast-xml-parser` accepts it.
 - Name check. Before this change the builder wrote any tag and any attribute name that was not empty. Now `element` and `sub_element` give -1, and `set` gives false, when the local name is not an XML Name. The rule is the XML Name rule of the parser, not the rule of a namespace name. A colon is valid, as in the parser. A prefix needs an `xmlns:p` declaration, or the parser refuses the written text.
 
 ## Security
@@ -142,13 +142,13 @@ Text, attribute values and namespace URIs were escaped before this change. The b
 
 The audit of the four other libraries added these protections.
 
-- The package refuses a document with an internal subset. No entity of a document expands. `lxml` and `fast-xml-parser` expand the entities of a subset. A document with many entities takes the memory of those two libraries. It never reaches this package.
-- The package refuses a document that is not well formed. `quick-xml` and `fast-xml-parser` accept such a document. A program that trusts the structure of a tree gets a tree it cannot trust from those two libraries.
-- The package refuses a picture deeper than 256 levels. Go `encoding/xml` and `quick-xml` have no depth limit, so a small document can make a deep tree.
+- The package refuses a document with an internal subset. No entity of a document expands. `ElementTree`, `lxml` and `fast-xml-parser` expand the entities of a subset. A document with many entities takes the memory of those three libraries. It never reaches this package.
+- The package refuses a document that is not well formed. `fast-xml-parser` accepts such a document. A program that trusts the structure of a tree gets a tree it cannot trust from that library.
+- The package refuses a picture deeper than 256 levels. `ElementTree`, Go `encoding/xml` and `quick-xml` have no depth limit, so a small document can make a deep tree.
 
 Risks that stay:
 
-- The package accepts a document that declares another version of XML, as `ElementTree` does. A program that needs one version must check the declaration itself.
+- The package accepts a document that declares another version of XML, as `ElementTree` does. `lxml` refuses a version that is not of the form 1.N. A program that needs one version must check the declaration itself.
 - A caller who fills a `Node` or an `Attr` by hand skips the check. Use `element`, `sub_element` and `set`.
 - A caller must not use the result -1 of `element` as a node id.
 - A name with an undeclared prefix passes the check. The parser then refuses the written text.
@@ -165,6 +165,7 @@ The audit ran the four libraries on the corpus of the package. That corpus holds
 - The audit did not compare the writer of the package with the writers of the four libraries. The writer follows `ElementTree`, and that is the oracle.
 - The audit did not fuzz the four libraries. It ran the corpus once.
 - The versions are the ones of the machine: `lxml` 6.1.3, `quick-xml` 0.42.0, `fast-xml-parser` 5.12.0 and Go 1.27.2.
+- The audit names four reference libraries. It does not cover Java or the C++ expat.
 
 ## Test
 
