@@ -42,10 +42,28 @@ fn bt_split(tag: const u8[:]) -> const u8[:], const u8[:] {
     return "", tag;
 }
 
+// name_ok tells whether s is a valid XML Name. It uses read_name, the
+// function that the parser uses, so the builder and the parser share one
+// rule. A name with a space, a quote, < or > is not valid. The writer
+// copies a name as it is, so the builder must refuse these. The rule
+// checks the form of a name, not whether a prefix is declared.
+fn name_ok(s: const u8[:]) -> bool {
+    return s.len > 0 && read_name(s, 0) == s.len;
+}
+
+// bt_name_ok tells whether the local name of the tag or the key is valid.
+// The part {uri} is free text and the writer escapes it.
+fn bt_name_ok(tag: const u8[:]) -> bool {
+    let _, local = bt_split(tag);
+    return name_ok(local);
+}
+
 // element makes a detached element with the tag. It gives the place of
-// the element, or -1 when the tag is empty.
+// the element, or -1 when the tag is empty or its local name is not a
+// valid XML Name.
 fn element(nodes: Node[>..]&, text: u8[>..]&, tag: const u8[:]) -> i32 {
     if tag.len == 0 { return -1; }
+    if !bt_name_ok(tag) { return -1; }
     let copy = bt_copy(text, tag);
     let uri, local = bt_split(copy);
     let id = bt_new(nodes, KIND_ELEMENT as i32);
@@ -163,10 +181,12 @@ fn remove(nodes: Node[>..]&, parent: i32, child: i32) -> bool {
 
 // set sets the attribute of the element. The key is a local name or a
 // name of the form {uri}local. An attribute with the key is replaced.
-// The value is plain text. It gives false when the key is empty or the
-// node is not an element.
+// The value is plain text. It gives false when the key is empty, the
+// local name of the key is not a valid XML Name, or the node is not an
+// element.
 fn set(nodes: Node[>..]&, attrs: Attr[>..]&, text: u8[>..]&, id: i32, key: const u8[:], value: const u8[:]) -> bool {
     if key.len == 0 || nodes[id].kind != KIND_ELEMENT { return false; }
+    if !bt_name_ok(key) { return false; }
     let kcopy = bt_copy(text, key);
     let uri, local = bt_split(kcopy);
     let vstart = text.len;

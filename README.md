@@ -56,8 +56,8 @@ Build and write:
 
 | Function | What it does |
 |---|---|
-| `element`, `sub_element`, `append`, `insert`, `remove`, `clear` | build a tree in arrays that the caller owns |
-| `set`, `set_text`, `set_tail`, `make_doc` | set attributes and text; make a `Doc` over the arrays |
+| `element`, `sub_element`, `append`, `insert`, `remove`, `clear` | build a tree in arrays that the caller owns; `element` and `sub_element` give -1 for a tag that is not an XML Name |
+| `set`, `set_text`, `set_tail`, `make_doc` | set attributes and text; make a `Doc` over the arrays; `set` gives false for a key that is not an XML Name |
 | `tostring(out, doc, id, opts)` | writes XML text as `ET.tostring`; `WriteOpts` holds `xml_declaration`, `short_empty_elements`, `method` and `default_namespace` |
 | `tostring_encoded(out, doc, id, opts, encoding)` | writes bytes in an encoding |
 | `write(path, doc, id, opts)` | writes to a file |
@@ -113,6 +113,27 @@ if ok {
 - The duplicate attribute check takes time in proportion to the square of the attributes of one element.
   5000 attributes take 0.1 s.
 - Python gives an error for an empty `QName` in `qname_aware_tags`. This package does not replicate it.
+- Name check. Before this change the builder wrote any tag and any attribute name that was not empty. Now `element` and `sub_element` give -1, and `set` gives false, when the local name is not an XML Name. The rule is the XML Name rule of the parser, not the rule of a namespace name. A colon is valid, as in the parser. A prefix needs an `xmlns:p` declaration, or the parser refuses the written text.
+
+## Security
+
+A tag or an attribute name that comes from a stranger can add markup. The writer copies a name as it is. The tag `a><evil/` wrote `<a><evil/ />`. The key `x="1" onload="y` wrote a forged attribute.
+
+Python `ElementTree` 3.14.4 and Go 1.27.2 `encoding/xml` write the same output for such names. `lxml` 6.1.3.0 raises `ValueError`. Node `xmlbuilder` 15.1.1 throws an error. The author ran each of them. This package refuses the name, as `lxml` and `xmlbuilder` do.
+
+Protections beyond `ElementTree`:
+
+- `element`, `sub_element` and `set` check the local name with `name_ok`. It uses the name reader of the parser. A bad name gives -1 or false. The call adds no node, no attribute and no text.
+- The part `{uri}` of a name is free text. The writer escapes it as an attribute value.
+
+Text, attribute values and namespace URIs were escaped before this change. The builder has no call that makes a comment, a CDATA section or a processing instruction. A parsed tree drops comments and PIs and turns CDATA into text. So the writer has no path that copies their text.
+
+Risks that stay:
+
+- A caller who fills a `Node` or an `Attr` by hand skips the check. Use `element`, `sub_element` and `set`.
+- A caller must not use the result -1 of `element` as a node id.
+- A name with an undeclared prefix passes the check. The parser then refuses the written text.
+- The writer recurses with the depth of the tree. A tree from a stranger needs a depth limit of its own.
 
 ## Test
 

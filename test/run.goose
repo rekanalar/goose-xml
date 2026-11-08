@@ -630,6 +630,209 @@ fn test_pull_characters() {
     assert(pull_ok("<a><?p?></a>"));
 }
 
+// written_both writes the tree with tostring and with build.
+fn written_both(ts: u8[>..]&, bd: u8[>..]&, nodes: xml::Node[>..]&, attrs: xml::Attr[>..]&, root: i32) {
+    let doc = xml::make_doc(nodes, attrs, root);
+    assert(xml::tostring(ts, doc, root, xml::write_opts()));
+    xml::build(bd, doc, root);
+}
+
+// check_tag builds one element and checks the text of both writers.
+fn check_tag(tag: const u8[:], want_ts: const u8[:], want_bd: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let r = xml::element(nodes, text, tag);
+    assert(r >= 0);
+    var ts: u8[>..] = [];
+    var bd: u8[>..] = [];
+    written_both(ts, bd, nodes, attrs, r);
+    assert(ts[..] == want_ts);
+    assert(bd[..] == want_bd);
+}
+
+// check_key sets one attribute on an element and checks both writers.
+fn check_key(key: const u8[:], want_ts: const u8[:], want_bd: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let r = xml::element(nodes, text, "a");
+    assert(xml::set(nodes, attrs, text, r, key, "v"));
+    var ts: u8[>..] = [];
+    var bd: u8[>..] = [];
+    written_both(ts, bd, nodes, attrs, r);
+    assert(ts[..] == want_ts);
+    assert(bd[..] == want_bd);
+}
+
+// A valid name builds, and both writers give the text of the first
+// release.
+fn test_names_valid() {
+    check_tag("a", "<a />", "<a/>");
+    check_tag("_x", "<_x />", "<_x/>");
+    check_tag("a-b", "<a-b />", "<a-b/>");
+    check_tag("a.b", "<a.b />", "<a.b/>");
+    check_tag("a1", "<a1 />", "<a1/>");
+    check_tag("a:b", "<a:b />", "<a:b/>");
+    check_tag("é", "<é />", "<é/>");
+    check_tag("{urn:x}item", "<ns0:item xmlns:ns0=\"urn:x\" />", "<item/>");
+    check_tag("{}item", "<item />", "<item/>");
+    check_key("xmlns", "<a />", "<a xmlns=\"v\"/>");
+    check_key("xmlns:p", "<a />", "<a xmlns:p=\"v\"/>");
+    check_key("xml:lang", "<a xml:lang=\"v\" />", "<a xml:lang=\"v\"/>");
+    check_key("{urn:x}k", "<a xmlns:ns0=\"urn:x\" ns0:k=\"v\" />", "<a k=\"v\"/>");
+    check_key("é", "<a é=\"v\" />", "<a é=\"v\"/>");
+}
+
+// refuse_tag checks that element refuses the tag and adds nothing.
+fn refuse_tag(tag: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let r = xml::element(nodes, text, "r");
+    let nodes_before = nodes.len;
+    let text_before = text.len;
+    assert(xml::element(nodes, text, tag) == -1);
+    assert(nodes.len == nodes_before);
+    assert(text.len == text_before);
+    // sub_element refuses it too, and the parent keeps its children.
+    assert(xml::sub_element(nodes, text, r, tag) == -1);
+    assert(nodes.len == nodes_before);
+    assert(nodes[r].first_child == -1);
+    var ts: u8[>..] = [];
+    var bd: u8[>..] = [];
+    written_both(ts, bd, nodes, attrs, r);
+    assert(ts[..] == "<r />");
+    assert(bd[..] == "<r/>");
+}
+
+// refuse_key checks that set refuses the key and changes nothing.
+fn refuse_key(key: const u8[:]) {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let r = xml::element(nodes, text, "r");
+    assert(xml::set(nodes, attrs, text, r, "k", "1"));
+    let attrs_before = attrs.len;
+    let text_before = text.len;
+    assert(!xml::set(nodes, attrs, text, r, key, "v"));
+    assert(attrs.len == attrs_before);
+    assert(text.len == text_before);
+    assert(nodes[r].attr_count == 1);
+    var ts: u8[>..] = [];
+    var bd: u8[>..] = [];
+    written_both(ts, bd, nodes, attrs, r);
+    assert(ts[..] == "<r k=\"1\" />");
+    assert(bd[..] == "<r k=\"1\"/>");
+}
+
+// A name that is not an XML Name is refused and writes nothing.
+fn test_names_bad() {
+    // Names that add markup to the written text.
+    refuse_tag("a><evil/");
+    refuse_tag("a onload=\"x\"");
+    refuse_key("x=\"1\" onload=\"y");
+    // Bytes that no name holds.
+    refuse_tag("a b");
+    refuse_tag("a\tb");
+    refuse_tag("a<b");
+    refuse_tag("a>b");
+    refuse_tag("a\"b");
+    refuse_tag("a=b");
+    refuse_tag("a/b");
+    refuse_tag("a'b");
+    refuse_key("a b");
+    refuse_key("a\tb");
+    refuse_key("a<b");
+    refuse_key("a>b");
+    refuse_key("a\"b");
+    refuse_key("a=b");
+    refuse_key("a/b");
+    refuse_key("a'b");
+    // A name cannot start with a digit, a hyphen or a period.
+    refuse_tag("1a");
+    refuse_tag("-a");
+    refuse_tag(".a");
+    refuse_key("1a");
+    refuse_key("-a");
+    refuse_key(".a");
+    // The split of {uri}local: only the local part counts.
+    refuse_tag("{urn:x}");
+    refuse_tag("{");
+    refuse_tag("{urn:x");
+    refuse_tag("{urn:x}a b");
+    refuse_key("{urn:x}");
+    refuse_key("{");
+    refuse_key("{urn:x");
+    refuse_key("{urn:x}a b");
+    // A byte that is not UTF-8, and a mark that cannot start a name.
+    refuse_tag("a\xff");
+    refuse_tag("a\xc0\x80");
+    refuse_key("a\xff");
+    refuse_key("a\xc0\x80");
+    refuse_tag("\xcc\x81a");
+}
+
+// Names of the right form survive a write and a parse. A prefix needs a
+// declaration, or the parser refuses the text.
+fn test_names_roundtrip() {
+    var nodes: xml::Node[>..] = [];
+    var attrs: xml::Attr[>..] = [];
+    var text: u8[>..] = [];
+    let r = xml::element(nodes, text, "r");
+    let tags: const u8[:][] = ["_x", "a-b", "a.b", "a1", "é"];
+    for t in tags {
+        let c = xml::sub_element(nodes, text, r, t);
+        assert(c >= 0);
+        assert(xml::set(nodes, attrs, text, c, t, "v"));
+    }
+    var out: u8[>..] = [];
+    let built = xml::make_doc(nodes, attrs, r);
+    assert(xml::tostring(out, built, r, xml::write_opts()));
+    var pn: xml::Node[>..] = [];
+    var pa: xml::Attr[>..] = [];
+    let doc, ok = xml::parse(out[..], pn, pa);
+    assert(ok);
+    var kid = pn[doc.root].first_child;
+    var i = 0;
+    while kid >= 0 {
+        assert(pn[kid].name == tags[i]);
+        assert(pa[pn[kid].attr_start].name == tags[i]);
+        kid = pn[kid].next_sibling;
+        i += 1;
+    }
+    assert(i == 5);
+    // A declared prefix reads back. build keeps the declaration.
+    var n2: xml::Node[>..] = [];
+    var a2: xml::Attr[>..] = [];
+    var t2: u8[>..] = [];
+    let r2 = xml::element(n2, t2, "r");
+    assert(xml::set(n2, a2, t2, r2, "xmlns:p", "urn:p"));
+    assert(xml::sub_element(n2, t2, r2, "p:b") >= 0);
+    var out2: u8[>..] = [];
+    let built2 = xml::make_doc(n2, a2, r2);
+    xml::build(out2, built2, r2);
+    assert(out2[..] == "<r xmlns:p=\"urn:p\"><p:b/></r>");
+    var pn2: xml::Node[>..] = [];
+    var pa2: xml::Attr[>..] = [];
+    let d2, ok2 = xml::parse(out2[..], pn2, pa2);
+    assert(ok2);
+    // The same name without a declaration passes the builder, and the
+    // parser refuses the text.
+    var n3: xml::Node[>..] = [];
+    var a3: xml::Attr[>..] = [];
+    var t3: u8[>..] = [];
+    let r3 = xml::element(n3, t3, "r");
+    assert(xml::sub_element(n3, t3, r3, "p:b") >= 0);
+    var out3: u8[>..] = [];
+    let built3 = xml::make_doc(n3, a3, r3);
+    xml::build(out3, built3, r3);
+    var pn3: xml::Node[>..] = [];
+    var pa3: xml::Attr[>..] = [];
+    let d3, ok3 = xml::parse(out3[..], pn3, pa3);
+    assert(!ok3);
+}
+
 fn test_builder() {
     var nodes: xml::Node[>..] = [];
     var attrs: xml::Attr[>..] = [];
@@ -705,6 +908,9 @@ fn test_events_and_files() {
 }
 
 fn main() {
+    test_names_valid();
+    test_names_bad();
+    test_names_roundtrip();
     test_parse_element();
     test_parse_nested();
     test_parse_comment_cdata();
