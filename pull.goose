@@ -13,6 +13,7 @@ namespace xml;
 import std;
 import tree;
 import parse;
+import parse_attrs;
 
 // The kinds of an event.
 const EV_START = 0;
