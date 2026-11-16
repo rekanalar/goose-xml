@@ -39,7 +39,7 @@ const DECL_NO = 2;
 // write_opts gives the defaults of ElementTree: no declaration and the
 // short form for an empty element.
 fn write_opts() -> WriteOpts {
-    return WriteOpts { xml_declaration: DECL_AUTO as i32, short_empty_elements: true, method: METHOD_XML as i32, default_namespace: "" };
+    return WriteOpts { xml_declaration: DECL_AUTO, short_empty_elements: true, method: METHOD_XML, default_namespace: "" };
 }
 
 // ns_known gives the well-known prefix of a uri, or an empty text.
@@ -79,7 +79,7 @@ fn ns_add(uris: const u8[:][>..]&, pfxs: const u8[:][>..]&, pbuf: u8[>..]&, uri:
         var v = uris.len;
         if v == 0 { digits.push('0'); }
         while v > 0 {
-            digits.push(('0' as i64 + v % 10) as u8);
+            digits.push(('0' + v % 10) as u8);
             v = v / 10;
         }
         var d = digits.len;
@@ -177,7 +177,7 @@ fn ts_open(out: u8[>..]&, doc: Doc&, id: i32, uris: const u8[:][>..]&, pfxs: con
         // The declarations come in the order of the prefix.
         var done: u8[>..] = [];
         var z: i64 = 0;
-        while z < uris.len { done.push(0 as u8); z += 1; }
+        while z < uris.len { done.push(0); z += 1; }
         var round: i64 = 0;
         while round < uris.len {
             var best: i64 = -1;
@@ -362,7 +362,7 @@ fn tostring(out: u8[>..]&, doc: Doc&, id: i32, opts: WriteOpts) -> bool {
 fn tostring_encoded(out: u8[>..]&, doc: Doc&, id: i32, opts: WriteOpts, encoding: const u8[:]) -> bool {
     var text: u8[>..] = [];
     var plain = opts;
-    plain.xml_declaration = DECL_NO as i32;
+    plain.xml_declaration = DECL_NO;
     if !tostring(text, doc, id, plain) { return false; }
     var low: u8[>..] = [];
     for c in encoding { low.push(if c >= 'A' && c <= 'Z' { c + 32 } else { c }); }

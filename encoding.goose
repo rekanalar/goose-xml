@@ -63,7 +63,7 @@ fn enc_kind(name: const u8[:]) -> i64 {
     if n == "utf_32be" || n == "utf_32_be" { return ENC_UTF32BE; }
     var i: i64 = 0;
     while i < ENC_ALIAS_COUNT {
-        if ENC_ALIAS_NAMES[i] == n { return ENC_ALIAS_PAGES[i] as i64; }
+        if ENC_ALIAS_NAMES[i] == n { return ENC_ALIAS_PAGES[i]; }
         i += 1;
     }
     return ENC_UNKNOWN;
@@ -201,7 +201,7 @@ fn decode(buf: u8[>..]&, input: const u8[:]) -> const u8[:], bool {
         } else {
             let cp = ENC_TABLE[kind * 128 + b - 128];
             if cp == 0xFFFD { return "", false; }
-            enc_put(tmp, cp as i64);
+            enc_put(tmp, cp);
         }
     }
     enc_emit(buf, tmp[..]);
@@ -234,7 +234,7 @@ fn enc_ref(out: u8[>..]&, cp: i64) {
     var digits: u8[>..] = [];
     var v = cp;
     while v > 0 {
-        digits.push(('0' as i64 + v % 10) as u8);
+        digits.push(('0' + v % 10) as u8);
         v = v / 10;
     }
     var d = digits.len;
@@ -251,8 +251,8 @@ fn enc_ref(out: u8[>..]&, cp: i64) {
 fn encode(out: u8[>..]&, text: const u8[:], encoding: const u8[:]) -> bool {
     let kind = enc_kind(encoding);
     if kind == ENC_UNKNOWN { return false; }
-    if kind == ENC_UTF16 { out.push(0xFF as u8); out.push(0xFE as u8); }
-    if kind == ENC_UTF32 { out.push(0xFF as u8); out.push(0xFE as u8); out.push(0 as u8); out.push(0 as u8); }
+    if kind == ENC_UTF16 { out.push(0xFF); out.push(0xFE); }
+    if kind == ENC_UTF32 { out.push(0xFF); out.push(0xFE); out.push(0); out.push(0); }
     var i: i64 = 0;
     while i < text.len {
         let c = text[i] as i64;
@@ -296,7 +296,7 @@ fn encode(out: u8[>..]&, text: const u8[:], encoding: const u8[:]) -> bool {
             var found: i64 = -1;
             var t: i64 = 0;
             while t < 128 {
-                if ENC_TABLE[kind * 128 + t] as i64 == cp { found = t; break; }
+                if ENC_TABLE[kind * 128 + t] == cp { found = t; break; }
                 t += 1;
             }
             if found >= 0 { out.push((128 + found) as u8); } else { enc_ref(out, cp); }

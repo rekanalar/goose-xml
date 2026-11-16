@@ -66,7 +66,7 @@ fn element(nodes: Node[>..]&, text: u8[>..]&, tag: const u8[:]) -> i32 {
     if !bt_name_ok(tag) { return -1; }
     let copy = bt_copy(text, tag);
     let uri, local = bt_split(copy);
-    let id = bt_new(nodes, KIND_ELEMENT as i32);
+    let id = bt_new(nodes, KIND_ELEMENT);
     nodes[id].name = local;
     nodes[id].uri = uri;
     nodes[id].local = local;
@@ -245,7 +245,7 @@ fn bt_put_text(nodes: Node[>..]&, text: u8[>..]&, parent: i32, prev: i32, value:
     if value.len == 0 { return; }
     let start = text.len;
     encode_text(text, value);
-    let id = bt_new(nodes, KIND_TEXT as i32);
+    let id = bt_new(nodes, KIND_TEXT);
     nodes[id].content = text[start..text.len];
     nodes[id].parent = parent;
     if prev >= 0 {

@@ -305,7 +305,7 @@ fn expect_tostring(id: i64, s: const u8[:], short_empty: bool, decl: bool, want:
     let doc, ok = xml::parse(s, nodes, attrs);
     if !ok { print("write case ", id, " refused the document"); assert(false); }
     var got: u8[>..] = [];
-    let opts = xml::WriteOpts { xml_declaration: if decl { xml::DECL_YES as i32 } else { xml::DECL_AUTO as i32 }, short_empty_elements: short_empty, method: xml::METHOD_XML as i32, default_namespace: "" };
+    let opts = xml::WriteOpts { xml_declaration: if decl { xml::DECL_YES } else { xml::DECL_AUTO }, short_empty_elements: short_empty, method: xml::METHOD_XML, default_namespace: "" };
     if !xml::tostring(got, doc, doc.root, opts) { print("write case ", id, " failed"); assert(false); }
     if got[..] != want {
         print("write case ", id, " differs. doc: ", s, "\n  want ", want, "\n  got  ", got[..]);
@@ -397,7 +397,7 @@ fn expect_tostring_enc(id: i64, s: const u8[:], encoding: const u8[:], decl: i32
     let doc, pok = xml::parse(s, nodes, attrs);
     if !pok { print("write case ", id, " refused the document"); assert(false); }
     var got: u8[>..] = [];
-    let opts = xml::WriteOpts { xml_declaration: decl, short_empty_elements: true, method: xml::METHOD_XML as i32, default_namespace: "" };
+    let opts = xml::WriteOpts { xml_declaration: decl, short_empty_elements: true, method: xml::METHOD_XML, default_namespace: "" };
     let res = xml::tostring_encoded(got, doc, doc.root, opts, encoding);
     if res != ok { print("write case ", id, " result ", res, " for ", encoding); assert(false); }
     if ok && got[..] != want {
@@ -485,7 +485,7 @@ fn expect_tostring_m(id: i64, s: const u8[:], method: i32, dflt: const u8[:], sh
     let doc, pok = xml::parse(s, nodes, attrs);
     if !pok { print("write case ", id, " refused the document"); assert(false); }
     var got: u8[>..] = [];
-    let opts = xml::WriteOpts { xml_declaration: xml::DECL_AUTO as i32, short_empty_elements: short_empty, method: method, default_namespace: dflt };
+    let opts = xml::WriteOpts { xml_declaration: xml::DECL_AUTO, short_empty_elements: short_empty, method: method, default_namespace: dflt };
     let res = xml::tostring(got, doc, doc.root, opts);
     if res != ok { print("write case ", id, " result ", res, " for ", s); assert(false); }
     if ok && got[..] != want {

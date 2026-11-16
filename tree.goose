@@ -186,7 +186,7 @@ fn char_ref(digits: const u8[:]) -> i64, bool {
         var i: i64 = 0;
         while i < digits.len {
             if digits[i] < '0' || digits[i] > '9' { return 0, false; }
-            cp = cp * 10 + (digits[i] - '0') as i64;
+            cp = cp * 10 + (digits[i] - '0');
             if cp > 1114111 { return 0, false; }
             i += 1;
         }
@@ -197,9 +197,9 @@ fn char_ref(digits: const u8[:]) -> i64, bool {
 
 // hex_value gives the value of one hexadecimal digit, or -1.
 fn hex_value(c: u8) -> i64 {
-    if c >= '0' && c <= '9' { return (c - '0') as i64; }
-    if c >= 'a' && c <= 'f' { return (c - 'a' + 10) as i64; }
-    if c >= 'A' && c <= 'F' { return (c - 'A' + 10) as i64; }
+    if c >= '0' && c <= '9' { return (c - '0'); }
+    if c >= 'a' && c <= 'f' { return (c - 'a' + 10); }
+    if c >= 'A' && c <= 'F' { return (c - 'A' + 10); }
     return -1;
 }
 

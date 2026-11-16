@@ -273,7 +273,7 @@ fn canonicalize(out: u8[>..]&, doc: Doc&, opts: C14nOpts,
     var pbuf: u8[>..] = [];
     var ubuf: u8[>..] = [];
     var preserve: u8[>..] = [];
-    preserve.push(0 as u8);
+    preserve.push(0);
     d_frames.push(0);
     d_uris.push(XML_NS);
     d_pfxs.push("xml");

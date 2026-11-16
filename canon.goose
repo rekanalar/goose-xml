@@ -220,7 +220,7 @@ fn c14_qname(qbuf: u8[>..]&, d_uris: const u8[:][>..]&, d_pfxs: const u8[:][>..]
             var digits: u8[>..] = [];
             var v = idx;
             if v == 0 { digits.push('0'); }
-            while v > 0 { digits.push(('0' as i64 + v % 10) as u8); v = v / 10; }
+            while v > 0 { digits.push(('0' + v % 10) as u8); v = v / 10; }
             var d = digits.len;
             while d > 0 { d -= 1; pbuf.push(digits[d]); }
             pm_pfxs.push(pbuf[pstart..pbuf.len]);

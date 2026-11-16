@@ -521,7 +521,7 @@ fn test_hostile() {
         at.append(" x");
         var d: u8[>..] = [];
         var v = i;
-        while v > 0 { d.push(('0' as i64 + v % 10) as u8); v = v / 10; }
+        while v > 0 { d.push(('0' + v % 10) as u8); v = v / 10; }
         d.push('_');
         at.append(d[..]);
         at.append("=\"1\"");

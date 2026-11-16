@@ -96,7 +96,7 @@ fn path_step(doc: Doc&, root: i32, cur: i32[>..]&, s: Step, out: i32[>..]&) -> b
     var seen: u8[>..] = [];
     if s.kind == S_PARENT {
         var z = 0;
-        while z < doc.nodes.len { seen.push(0 as u8); z += 1; }
+        while z < doc.nodes.len { seen.push(0); z += 1; }
     }
     var k = 0;
     while k < cur.len {
@@ -221,7 +221,7 @@ fn path_predicate(steps: Step[>..]&, ptoks: Tok[>..]&) -> bool {
     if sig == "@-='" || sig == "@-!='" {
         // [@attribute='value'] or [@attribute!='value']
         if parts < 4 { return false; }
-        let kind: i32 = if sig == "@-='" { S_ATTR_EQ as i32 } else { S_ATTR_NE as i32 };
+        let kind: i32 = if sig == "@-='" { S_ATTR_EQ } else { S_ATTR_NE };
         steps.push(Step { kind: kind, tag: "", key: path_pred_at(ptoks, 1),
             value: path_pred_at(ptoks, parts - 1), index: 0 });
         return true;
@@ -241,10 +241,10 @@ fn path_predicate(steps: Step[>..]&, ptoks: Tok[>..]&) -> bool {
             if path_is_number(first) { return false; }
         }
         var kind: i32 = 0;
-        if sig == ".='" { kind = S_TEXT_EQ as i32; }
-        else if sig == ".!='" { kind = S_TEXT_NE as i32; }
-        else if sig == "-='" { kind = S_CHILD_EQ as i32; }
-        else { kind = S_CHILD_NE as i32; }
+        if sig == ".='" { kind = S_TEXT_EQ; }
+        else if sig == ".!='" { kind = S_TEXT_NE; }
+        else if sig == "-='" { kind = S_CHILD_EQ; }
+        else { kind = S_CHILD_NE; }
         steps.push(Step { kind: kind, tag: first, key: "",
             value: path_pred_at(ptoks, parts - 1), index: 0 });
         return true;

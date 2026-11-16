@@ -188,7 +188,7 @@ fn path_number(t: const u8[:]) -> i64 {
     var i: i64 = 0;
     if t[0] == '-' { i = 1; }
     while i < t.len {
-        v = v * 10 + (t[i] - '0') as i64;
+        v = v * 10 + (t[i] - '0');
         i += 1;
     }
     if t[0] == '-' { return -v; }
